@@ -5,8 +5,9 @@ How much of open source is now written by AI coding agents — and does their wo
 This pipeline processes every public pull request on GitHub (via [GH Archive](https://www.gharchive.org/))
 and detects PRs opened by AI coding agents such as Claude, Codex, Cursor, Copilot, Jules and Devin.
 
-> **First look (2026-10-05 → 06, 33.5k new PRs):** ≈14.5% were opened by detected AI agents —
-> Claude 8.3%, Codex 4.1%, Cursor 1.5%, Devin 0.3%, Copilot 0.2%, ChatGPT 0.1%.
+> **Three months (2026-07-05 → 10-06, 2.26M new PRs):** 13.1% were opened by detected AI agents —
+> Claude 6.0%, Codex 4.5%, Cursor 1.9%, Copilot 0.3%, Devin 0.2%, ChatGPT 0.1%.
+> The weekly share stays between 11% and 15%.
 
 ## Architecture
 
@@ -14,6 +15,7 @@ and detects PRs opened by AI coding agents such as Claude, Codex, Cursor, Copilo
 GH Archive (hourly .json.gz, ~15 MB)
   → ingest: stream + filter PR events, raw never stored       [Python]
   → data/events/date=YYYY-MM-DD/HH.parquet (~100 KB/hour)     [Parquet]
+  → data/ingest_stats/…/HH.parquet (one row per hour: counts)  [manifest]
   → staging → agent detection → PR lifecycle → daily metrics  [dbt + DuckDB]
   → hourly schedule + backfills                               [Dagster]        (planned)
   → dashboard                                                 [Streamlit]      (planned)
@@ -38,6 +40,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 uv sync
 uv run tracker-ingest 2026-10-06T14                       # one hour
 uv run tracker-ingest 2026-10-06T00 --end 2026-10-07T00   # one day
+uv run tracker-ingest 2026-07-05T00 --end 2026-10-07T00 --workers 8   # 3 months, ~50 min
 uv run pytest
 ```
 
@@ -68,9 +71,27 @@ one-line CSV change, not a code change. Bot accounts take priority over branch p
 uv run dbt build --project-dir transform --profiles-dir transform   # run from repo root
 ```
 
-`dbt build` runs seeds, models and 25 tests (uniqueness, not-null, accepted values,
+`dbt build` runs seeds, models and 29 tests (uniqueness, not-null, accepted values,
 relationships, plus custom tests such as "no PR merged before it was opened").
 The warehouse is `data/warehouse.duckdb`; all timestamps are bucketed in UTC.
+
+### Data quality
+
+Every ingested hour also writes a one-row manifest (`data/ingest_stats`) with lines read,
+PR events kept and malformed lines — even when the hour had no PRs. dbt uses it to tell
+"no PRs" apart from "never loaded":
+
+- `capture_health` — one row per hour, flagged `missing`, `low` (< 0.5× the trailing week's
+  median PR events), `high` (> 2×) or `ok`.
+- `agg_daily_capture` — `capture_quality` per day (`partial` if any hour is missing, `low` if
+  more than 6 hours are low), joined onto `agg_daily_metrics` so every number says how far
+  to trust it.
+- Tests: missing hours warn (> 24 fail the build), malformed rate > 0.1% fails, volume
+  outliers warn, rates must be between 0 and 1.
+- Source freshness: `uv run dbt source freshness --project-dir transform --profiles-dir transform`
+  warns after 6h without new events and errors after 24h.
+
+Over the three months: 1,541 hours ok, 413 high, 302 low, 0 missing; 78 days ok, 16 low.
 
 ### Data caveats
 
@@ -80,12 +101,14 @@ The warehouse is `data/warehouse.duckdb`; all timestamps are bucketed in UTC.
   containing push/create/delete events (~85k → ~7k events/hour), and the number of captured
   PR events roughly doubles. Absolute PR counts before and after are not comparable;
   agent *share* is the more robust metric.
+- **Uneven capture:** PR events per hour range from ~50 to ~39k across the three months;
+  the variance is upstream in GH Archive. `capture_quality` marks the affected days.
 
 ## Roadmap
 
 - [x] Hourly ingestion to partitioned Parquet (idempotent, atomic writes, retries)
 - [x] dbt models: staging, agent detection, PR lifecycle (opened → merged/closed)
-- [ ] Data quality tests and freshness checks
+- [x] Data quality tests and freshness checks
 - [ ] Dagster schedule and backfills
 - [ ] Streamlit dashboard
 - [ ] Docker Compose and GitHub Actions CI
