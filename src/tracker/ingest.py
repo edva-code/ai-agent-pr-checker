@@ -194,9 +194,14 @@ def ingest_hour(
 ) -> HourStats:
     stats = HourStats(hour=hour)
     path = output_path(hour, out_dir)
-    if path.exists() and not force:
+    stats_path = output_path(hour, stats_dir)
+    # Done only when both exist: a crash between the two writes must not be skipped on rerun
+    if path.exists() and stats_path.exists() and not force:
         stats.skipped = True
         return stats
+    # Events gone: drop stale stats so a failed download shows as 'missing', not 'ok'
+    if not path.exists():
+        stats_path.unlink(missing_ok=True)
 
     session = session or requests.Session()
     with open_hour(hour, session) as stream:

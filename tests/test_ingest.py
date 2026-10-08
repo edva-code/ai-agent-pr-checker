@@ -115,6 +115,38 @@ def test_ingest_hour_writes_empty_file_for_hour_without_prs(tmp_path):
     ]
 
 
+def test_rerun_repairs_hour_whose_stats_were_never_written(tmp_path):
+    session = FakeSession(gzip.compress(b"".join(raw_lines(pr_event("1")))))
+    ingest.ingest_hour(HOUR, tmp_path / "events", session=session, stats_dir=tmp_path / "stats")
+    stats_file = tmp_path / "stats" / "date=2026-10-06" / "14.parquet"
+    stats_file.unlink()  # simulate a crash between write_parquet and write_stats
+
+    again = ingest.ingest_hour(
+        HOUR, tmp_path / "events", session=session, stats_dir=tmp_path / "stats"
+    )
+
+    assert not again.skipped and session.calls == 2
+    assert stats_file.exists()
+
+
+def test_stale_stats_removed_when_events_file_is_gone(tmp_path):
+    session = FakeSession(gzip.compress(b"".join(raw_lines(pr_event("1")))))
+    ingest.ingest_hour(HOUR, tmp_path / "events", session=session, stats_dir=tmp_path / "stats")
+    (tmp_path / "events" / "date=2026-10-06" / "14.parquet").unlink()
+
+    with pytest.raises(FileNotFoundError):
+        ingest.ingest_hour(
+            HOUR,
+            tmp_path / "events",
+            session=FakeSession(b"", status=404),
+            stats_dir=tmp_path / "stats",
+        )
+
+    assert not (tmp_path / "stats" / "date=2026-10-06" / "14.parquet").exists()
+
+
 def test_missing_hour_raises_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
-        ingest.ingest_hour(HOUR, tmp_path, session=FakeSession(b"", status=404))
+        ingest.ingest_hour(
+            HOUR, tmp_path, session=FakeSession(b"", status=404), stats_dir=tmp_path / "stats"
+        )
