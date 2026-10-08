@@ -9,6 +9,7 @@ The file is streamed and filtered on the fly, so the raw data never touches disk
 Usage:
     tracker-ingest 2026-10-06T14                       # one hour
     tracker-ingest 2026-10-01T00 --end 2026-10-02T00   # a range (end exclusive)
+    tracker-ingest 2026-07-01T00 --end 2026-10-01T00 --workers 8   # backfill in parallel
 """
 
 from __future__ import annotations
@@ -17,8 +18,10 @@ import argparse
 import gzip
 import json
 import logging
+import threading
 import time
 from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -192,6 +195,38 @@ def parse_hour(value: str) -> datetime:
     return datetime.fromisoformat(value).replace(minute=0, second=0, microsecond=0, tzinfo=UTC)
 
 
+_local = threading.local()
+
+
+def thread_session() -> requests.Session:
+    # requests.Session is not thread-safe, so each worker thread gets its own
+    if not hasattr(_local, "session"):
+        _local.session = requests.Session()
+    return _local.session
+
+
+def run_hour(hour: datetime, out_dir: Path, force: bool) -> HourStats | None:
+    started = time.monotonic()
+    label = f"{hour:%Y-%m-%d %H}h"
+    try:
+        stats = ingest_hour(hour, out_dir, force, thread_session())
+    except FileNotFoundError as exc:
+        log.warning("%s", exc)
+        return None
+    if stats.skipped:
+        log.info("%s already ingested, skipping", label)
+        return stats
+    log.info(
+        "%s: kept %d of %d events (%d malformed) in %.1fs",
+        label,
+        stats.kept,
+        stats.lines,
+        stats.malformed,
+        time.monotonic() - started,
+    )
+    return stats
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
@@ -202,30 +237,39 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--force", action="store_true", help="re-ingest hours that already exist")
+    parser.add_argument(
+        "--workers", type=int, default=1, help="hours to download in parallel (default: 1)"
+    )
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s [%(threadName)s] %(message)s"
+    )
     end = args.end or args.start + timedelta(hours=1)
-    session = requests.Session()
+    hours = list(hours_between(args.start, end))
+    started = time.monotonic()
+    done = failed = 0
 
-    for hour in hours_between(args.start, end):
-        started = time.monotonic()
-        try:
-            stats = ingest_hour(hour, args.out_dir, args.force, session)
-        except FileNotFoundError as exc:
-            log.warning("%s", exc)
-            continue
-        if stats.skipped:
-            log.info("%s already ingested, skipping", f"{hour:%Y-%m-%d %H}h")
-            continue
-        log.info(
-            "%s: kept %d of %d events (%d malformed) in %.1fs",
-            f"{hour:%Y-%m-%d %H}h",
-            stats.kept,
-            stats.lines,
-            stats.malformed,
-            time.monotonic() - started,
-        )
+    with ThreadPoolExecutor(max_workers=args.workers, thread_name_prefix="w") as pool:
+        futures = {pool.submit(run_hour, h, args.out_dir, args.force): h for h in hours}
+        for future in as_completed(futures):
+            try:
+                if future.result() is not None:
+                    done += 1
+            except Exception:
+                # One bad hour must not kill a long backfill; rerun picks it up later
+                failed += 1
+                log.exception("%s failed", f"{futures[future]:%Y-%m-%d %H}h")
+
+    log.info(
+        "finished %d/%d hours (%d failed) in %.0fs",
+        done,
+        len(hours),
+        failed,
+        time.monotonic() - started,
+    )
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
