@@ -90,8 +90,8 @@ def test_ingest_hour_writes_parquet_and_is_idempotent(tmp_path):
         gzip.compress(b"".join(raw_lines(pr_event("1"), pr_event("2", "merged"))))
     )
 
-    stats = ingest.ingest_hour(HOUR, tmp_path, session=session)
-    again = ingest.ingest_hour(HOUR, tmp_path, session=session)
+    stats = ingest.ingest_hour(HOUR, tmp_path, session=session, stats_dir=tmp_path / "stats")
+    again = ingest.ingest_hour(HOUR, tmp_path, session=session, stats_dir=tmp_path / "stats")
 
     table = pq.read_table(tmp_path / "date=2026-10-06" / "14.parquet")
     assert table.schema.equals(ingest.SCHEMA)
@@ -101,9 +101,18 @@ def test_ingest_hour_writes_parquet_and_is_idempotent(tmp_path):
 
 
 def test_ingest_hour_writes_empty_file_for_hour_without_prs(tmp_path):
-    ingest.ingest_hour(HOUR, tmp_path, session=FakeSession(gzip.compress(b"")))
+    push = {"id": "2", "type": "PushEvent", "payload": {}, "created_at": "2026-10-06T14:00:00Z"}
+    body = gzip.compress(b"".join(raw_lines(push, push)))
+    ingest.ingest_hour(
+        HOUR, tmp_path / "events", session=FakeSession(body), stats_dir=tmp_path / "stats"
+    )
 
-    assert pq.read_table(tmp_path / "date=2026-10-06" / "14.parquet").num_rows == 0
+    assert pq.read_table(tmp_path / "events" / "date=2026-10-06" / "14.parquet").num_rows == 0
+    stats = pq.read_table(tmp_path / "stats" / "date=2026-10-06" / "14.parquet")
+    assert stats.schema.equals(ingest.STATS_SCHEMA)
+    assert stats.select(["lines", "kept", "malformed"]).to_pylist() == [
+        {"lines": 2, "kept": 0, "malformed": 0}
+    ]
 
 
 def test_missing_hour_raises_file_not_found(tmp_path):

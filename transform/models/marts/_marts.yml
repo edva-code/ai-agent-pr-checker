@@ -23,3 +23,28 @@ models:
     columns:
       - name: merge_rate
         data_tests: [not_null]
+      - name: capture_quality
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ok, low, partial]
+  - name: capture_health
+    description: One row per hour, flagging missing hours and unusual PR volume.
+    columns:
+      - name: hour
+        data_tests: [unique, not_null]
+      - name: capture_flag
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ok, low, high, missing]
+  - name: agg_daily_capture
+    description: Hours present and capture quality per day.
+    columns:
+      - name: day
+        data_tests: [unique, not_null]
+      - name: capture_quality
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ok, low, partial]

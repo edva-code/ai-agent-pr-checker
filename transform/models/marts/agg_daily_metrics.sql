@@ -20,5 +20,7 @@ select
     prs_closed_unmerged,
     round(prs_merged / prs_opened, 3) as merge_rate,
     round(median_hours_to_merge, 2) as median_hours_to_merge,
-    round(prs_opened / sum(prs_opened) over (partition by opened_date), 3) as share_of_day
+    round(prs_opened / sum(prs_opened) over (partition by opened_date), 3) as share_of_day,
+    capture.capture_quality
 from daily
+left join {{ ref('agg_daily_capture') }} as capture on daily.opened_date = capture.day

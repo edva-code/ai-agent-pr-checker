@@ -7,3 +7,12 @@ sources:
       - name: events
         meta:
           external_location: "read_parquet('data/events/*/*.parquet', hive_partitioning = true)"
+        config:
+          loaded_at_field: created_at
+          freshness:
+            warn_after: {count: 6, period: hour}
+            error_after: {count: 24, period: hour}
+      - name: ingest_stats
+        description: One row per ingested hour, written even when the hour had no PRs.
+        meta:
+          external_location: "read_parquet('data/ingest_stats/*/*.parquet', hive_partitioning = true)"

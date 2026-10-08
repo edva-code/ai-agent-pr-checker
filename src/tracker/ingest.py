@@ -36,6 +36,7 @@ log = logging.getLogger("tracker.ingest")
 GHARCHIVE_URL = "https://data.gharchive.org/{date}-{hour}.json.gz"
 KEEP_TYPES = frozenset({"PullRequestEvent", "PullRequestReviewEvent"})
 DEFAULT_OUT_DIR = Path("data/events")
+DEFAULT_STATS_DIR = Path("data/ingest_stats")
 
 SCHEMA = pa.schema(
     [
@@ -55,6 +56,17 @@ SCHEMA = pa.schema(
         ("base_repo_id", pa.int64()),
         ("review_state", pa.string()),
         ("source_hour", pa.timestamp("ms", tz="UTC")),
+    ]
+)
+
+# One row per processed hour: lets dbt tell "no PRs" apart from "hour never loaded"
+STATS_SCHEMA = pa.schema(
+    [
+        ("hour", pa.timestamp("ms", tz="UTC")),
+        ("lines", pa.int64()),
+        ("kept", pa.int64()),
+        ("malformed", pa.int64()),
+        ("ingested_at", pa.timestamp("ms", tz="UTC")),
     ]
 )
 
@@ -134,13 +146,24 @@ def filter_events(
         yield flatten(event, source_hour)
 
 
-def write_parquet(rows: list[dict[str, Any]], path: Path) -> None:
+def write_parquet(rows: list[dict[str, Any]], path: Path, schema: pa.Schema = SCHEMA) -> None:
     """Write atomically: a crash mid-write never leaves a half-written file behind."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".parquet.tmp")
     # Empty hours still get a file, so "this hour was processed" is visible on disk
-    pq.write_table(pa.Table.from_pylist(rows, schema=SCHEMA), tmp, compression="zstd")
+    pq.write_table(pa.Table.from_pylist(rows, schema=schema), tmp, compression="zstd")
     tmp.replace(path)
+
+
+def write_stats(stats: HourStats, stats_dir: Path = DEFAULT_STATS_DIR) -> None:
+    row = {
+        "hour": stats.hour,
+        "lines": stats.lines,
+        "kept": stats.kept,
+        "malformed": stats.malformed,
+        "ingested_at": datetime.now(UTC),
+    }
+    write_parquet([row], output_path(stats.hour, stats_dir), STATS_SCHEMA)
 
 
 def open_hour(hour: datetime, session: requests.Session, retries: int = 3) -> IO[bytes]:
@@ -167,6 +190,7 @@ def ingest_hour(
     out_dir: Path = DEFAULT_OUT_DIR,
     force: bool = False,
     session: requests.Session | None = None,
+    stats_dir: Path = DEFAULT_STATS_DIR,
 ) -> HourStats:
     stats = HourStats(hour=hour)
     path = output_path(hour, out_dir)
@@ -178,6 +202,7 @@ def ingest_hour(
     with open_hour(hour, session) as stream:
         rows = list(filter_events(stream, hour, stats))
     write_parquet(rows, path)
+    write_stats(stats, stats_dir)
     return stats
 
 
@@ -205,11 +230,11 @@ def thread_session() -> requests.Session:
     return _local.session
 
 
-def run_hour(hour: datetime, out_dir: Path, force: bool) -> HourStats | None:
+def run_hour(hour: datetime, out_dir: Path, stats_dir: Path, force: bool) -> HourStats | None:
     started = time.monotonic()
     label = f"{hour:%Y-%m-%d %H}h"
     try:
-        stats = ingest_hour(hour, out_dir, force, thread_session())
+        stats = ingest_hour(hour, out_dir, force, thread_session(), stats_dir)
     except FileNotFoundError as exc:
         log.warning("%s", exc)
         return None
@@ -236,6 +261,7 @@ def main(argv: list[str] | None = None) -> None:
         "--end", type=parse_hour, help="stop before this hour (default: start + 1h)"
     )
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument("--stats-dir", type=Path, default=DEFAULT_STATS_DIR)
     parser.add_argument("--force", action="store_true", help="re-ingest hours that already exist")
     parser.add_argument(
         "--workers", type=int, default=1, help="hours to download in parallel (default: 1)"
@@ -251,7 +277,9 @@ def main(argv: list[str] | None = None) -> None:
     done = failed = 0
 
     with ThreadPoolExecutor(max_workers=args.workers, thread_name_prefix="w") as pool:
-        futures = {pool.submit(run_hour, h, args.out_dir, args.force): h for h in hours}
+        futures = {
+            pool.submit(run_hour, h, args.out_dir, args.stats_dir, args.force): h for h in hours
+        }
         for future in as_completed(futures):
             try:
                 if future.result() is not None:
