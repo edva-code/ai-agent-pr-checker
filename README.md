@@ -5,7 +5,7 @@ How much of open source is now written by AI coding agents — and does their wo
 This pipeline processes every public pull request on GitHub (via [GH Archive](https://www.gharchive.org/))
 and detects PRs opened by AI coding agents such as Claude, Codex, Cursor, Copilot, Jules and Devin.
 
-> **First look (one hour, 2026-10-06 14:00 UTC):** ~82 of 529 newly opened PRs (≈15%) came from
+> **First look (one hour, 2026-10-06 14:00 UTC):** 80 of 529 newly opened PRs (≈15%) came from
 > branches created by AI agents.
 
 ## Architecture
