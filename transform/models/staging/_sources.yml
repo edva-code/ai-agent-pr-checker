@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: gharchive
+    description: Pull request events written by tracker-ingest.
+    tables:
+      - name: events
+        meta:
+          external_location: "read_parquet('data/events/*/*.parquet', hive_partitioning = true)"

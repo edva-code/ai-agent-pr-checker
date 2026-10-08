@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: stg_pr_events
+    description: Deduplicated pull request and review events.
+    columns:
+      - name: event_id
+        data_tests: [unique, not_null]
+      - name: pr_id
+        data_tests: [not_null]
+      - name: created_at
+        data_tests: [not_null]
+      - name: event_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [PullRequestEvent, PullRequestReviewEvent]

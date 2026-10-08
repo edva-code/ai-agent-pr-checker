@@ -1,0 +1,10 @@
+agent,match_type,pattern,priority
+devin,actor_login,devin-ai-integration[bot],1
+copilot,actor_login,Copilot,1
+claude,branch_prefix,claude/,2
+codex,branch_prefix,codex/,2
+cursor,branch_prefix,cursor/,2
+copilot,branch_prefix,copilot/,2
+chatgpt,branch_prefix,chatgpt/,2
+jules,branch_prefix,jules/,2
+devin,branch_prefix,devin/,2

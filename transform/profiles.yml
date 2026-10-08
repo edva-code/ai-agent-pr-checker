@@ -1,0 +1,11 @@
+# Paths are relative to the repo root: run dbt from there (see README).
+tracker:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: data/warehouse.duckdb
+      threads: 4
+      settings:
+        # Day buckets must not depend on the laptop's timezone
+        TimeZone: UTC

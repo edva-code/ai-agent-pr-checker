@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: fct_prs
+    description: One row per PR opened in the loaded window, labelled with its agent.
+    columns:
+      - name: pr_id
+        data_tests: [unique, not_null]
+      - name: agent
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('agent_names')
+                field: agent
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [merged, closed, open]
+  - name: agg_daily_metrics
+    description: PRs opened, merged and merge rate per agent per day.
+    columns:
+      - name: merge_rate
+        data_tests: [not_null]

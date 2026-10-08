@@ -1,0 +1,25 @@
+name: tracker
+version: "0.1.0"
+profile: tracker
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+models:
+  tracker:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  tracker:
+    agent_rules:
+      +column_types:
+        agent: varchar
+        match_type: varchar
+        pattern: varchar
+        priority: integer
