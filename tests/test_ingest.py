@@ -41,6 +41,14 @@ def test_hour_url_is_not_zero_padded():
     assert ingest.hour_url(HOUR).endswith("2026-10-06-14.json.gz")
 
 
+def test_source_switches_to_opendigger_at_cutoff():
+    before = datetime(2026, 9, 5, 23, tzinfo=UTC)
+    assert ingest.hour_source(before) == "gharchive"
+    assert ingest.hour_url(before).startswith("https://data.gharchive.org/")
+    assert ingest.hour_source(ingest.OPENDIGGER_START) == "opendigger"
+    assert ingest.hour_url(ingest.OPENDIGGER_START).startswith("https://gharchive.open-digger.cn/")
+
+
 def test_filter_keeps_only_pr_events_and_counts_malformed():
     push = {"id": "2", "type": "PushEvent", "payload": {}, "created_at": "2026-10-06T14:00:00Z"}
     lines = raw_lines(pr_event("1"), push) + [b'{"type":"PullRequestEvent", broken\n']
@@ -110,6 +118,7 @@ def test_ingest_hour_writes_empty_file_for_hour_without_prs(tmp_path):
     assert pq.read_table(tmp_path / "events" / "date=2026-10-06" / "14.parquet").num_rows == 0
     stats = pq.read_table(tmp_path / "stats" / "date=2026-10-06" / "14.parquet")
     assert stats.schema.equals(ingest.STATS_SCHEMA)
+    assert stats.column("source").to_pylist() == ["opendigger"]
     assert stats.select(["lines", "kept", "malformed"]).to_pylist() == [
         {"lines": 2, "kept": 0, "malformed": 0}
     ]

@@ -33,7 +33,12 @@ import requests
 
 log = logging.getLogger("tracker.ingest")
 
-GHARCHIVE_URL = "https://data.gharchive.org/{date}-{hour}.json.gz"
+SOURCE_URLS = {
+    "gharchive": "https://data.gharchive.org/{date}-{hour}.json.gz",
+    # Mirror with ~10x fuller capture, same file names; first complete day is 2026-09-06
+    "opendigger": "https://gharchive.open-digger.cn/{date}-{hour}.json.gz",
+}
+OPENDIGGER_START = datetime(2026, 9, 6, tzinfo=UTC)
 KEEP_TYPES = frozenset({"PullRequestEvent", "PullRequestReviewEvent"})
 DEFAULT_OUT_DIR = Path("data/events")
 DEFAULT_STATS_DIR = Path("data/ingest_stats")
@@ -66,6 +71,7 @@ STATS_SCHEMA = pa.schema(
         ("lines", pa.int64()),
         ("kept", pa.int64()),
         ("malformed", pa.int64()),
+        ("source", pa.string()),
         ("ingested_at", pa.timestamp("ms", tz="UTC")),
     ]
 )
@@ -80,9 +86,13 @@ class HourStats:
     skipped: bool = False
 
 
+def hour_source(hour: datetime) -> str:
+    return "opendigger" if hour >= OPENDIGGER_START else "gharchive"
+
+
 def hour_url(hour: datetime) -> str:
     # GH Archive hours are NOT zero-padded: 2026-10-06-9.json.gz, not -09
-    return GHARCHIVE_URL.format(date=hour.strftime("%Y-%m-%d"), hour=hour.hour)
+    return SOURCE_URLS[hour_source(hour)].format(date=hour.strftime("%Y-%m-%d"), hour=hour.hour)
 
 
 def output_path(hour: datetime, out_dir: Path) -> Path:
@@ -161,6 +171,7 @@ def write_stats(stats: HourStats, stats_dir: Path = DEFAULT_STATS_DIR) -> None:
         "lines": stats.lines,
         "kept": stats.kept,
         "malformed": stats.malformed,
+        "source": hour_source(stats.hour),
         "ingested_at": datetime.now(UTC),
     }
     write_parquet([row], output_path(stats.hour, stats_dir), STATS_SCHEMA)

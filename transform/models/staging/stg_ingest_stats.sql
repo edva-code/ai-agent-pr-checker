@@ -4,5 +4,6 @@ select
     lines as events_seen,
     kept as pr_events,
     malformed,
+    source,
     cast(ingested_at as timestamptz) as ingested_at
 from {{ source('gharchive', 'ingest_stats') }}
