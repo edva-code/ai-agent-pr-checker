@@ -8,6 +8,7 @@ dependencies = [
     "dbt-duckdb>=1.11.0",
     "pyarrow>=17",
     "requests>=2.32",
+    "streamlit>=1.65.0",
 ]
 
 [project.scripts]

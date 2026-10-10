@@ -18,7 +18,7 @@ GH Archive (hourly .json.gz, ~15 MB)
   → data/ingest_stats/…/HH.parquet (one row per hour: counts)  [manifest]
   → staging → agent detection → PR lifecycle → daily metrics  [dbt + DuckDB]
   → hourly schedule + backfills                               [Dagster]        (planned)
-  → dashboard                                                 [Streamlit]      (planned)
+  → dashboard                                                 [Streamlit]
 ```
 
 ## How agents are detected
@@ -75,6 +75,14 @@ uv run dbt build --project-dir transform --profiles-dir transform   # run from r
 relationships, plus custom tests such as "no PR merged before it was opened").
 The warehouse is `data/warehouse.duckdb`; all timestamps are bucketed in UTC.
 
+### Dashboard
+
+```bash
+uv run streamlit run src/tracker/dashboard.py   # not while dbt build runs (DuckDB lock)
+```
+
+AI vs human PR totals and the daily AI share, with capture-warning days marked.
+
 ### Data quality
 
 Every ingested hour also writes a one-row manifest (`data/ingest_stats`) with lines read,
@@ -110,5 +118,5 @@ Over the three months: 1,541 hours ok, 413 high, 302 low, 0 missing; 78 days ok,
 - [x] dbt models: staging, agent detection, PR lifecycle (opened → merged/closed)
 - [x] Data quality tests and freshness checks
 - [ ] Dagster schedule and backfills
-- [ ] Streamlit dashboard
+- [x] Streamlit dashboard
 - [ ] Docker Compose and GitHub Actions CI
