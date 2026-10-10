@@ -39,7 +39,7 @@ models:
               arguments:
                 values: [ok, low, high, missing]
   - name: agg_daily_capture
-    description: Hours present and capture quality per day.
+    description: Hours present, capture quality and capture warnings per day.
     columns:
       - name: day
         data_tests: [unique, not_null]
@@ -48,3 +48,16 @@ models:
           - accepted_values:
               arguments:
                 values: [ok, low, partial]
+      - name: volume_low
+        data_tests: [not_null]
+      - name: pr_share_low
+        data_tests: [not_null]
+      - name: no_merges
+        data_tests: [not_null]
+  - name: capture_monthly_volume
+    description: Average events per captured hour per source and month, against the previous unflagged months.
+    columns:
+      - name: month
+        data_tests: [not_null]
+      - name: volume_low
+        data_tests: [not_null]

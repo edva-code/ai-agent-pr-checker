@@ -15,7 +15,8 @@ hours as (
         stats.hour is not null as has_file,
         stats.events_seen,
         stats.pr_events,
-        stats.malformed
+        stats.malformed,
+        stats.source
     from spine
     left join stats using (hour)
 ),
