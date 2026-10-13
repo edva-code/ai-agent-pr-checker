@@ -30,3 +30,5 @@ logs/
 .idea/
 *.swp
 .DS_Store
+.claude
+.vibe-wise
