@@ -12,3 +12,5 @@ tracker:
         # Leave the laptop usable during builds; DuckDB spills to disk past the limit
         threads: 4
         memory_limit: 8GB
+        # Row order is irrelevant here; keeping it makes big table builds run out of memory
+        preserve_insertion_order: false

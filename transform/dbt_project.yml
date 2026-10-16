@@ -8,10 +8,11 @@ test-paths: ["tests"]
 
 models:
   tracker:
+    # Tables, not views: each test on a view re-reads and re-dedupes every event file
     staging:
-      +materialized: view
+      +materialized: table
     intermediate:
-      +materialized: view
+      +materialized: table
     marts:
       +materialized: table
 

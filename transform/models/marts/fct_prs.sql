@@ -1,6 +1,6 @@
 -- One row per PR opened inside the loaded window.
-with lifecycle as (
-    select * from {{ ref('int_pr_lifecycle') }}
+with openings as (
+    select * from {{ ref('stg_pr_events') }}
 ),
 
 detection as (
@@ -8,28 +8,16 @@ detection as (
 )
 
 select
-    lifecycle.pr_id,
-    lifecycle.repo_name,
-    lifecycle.pr_number,
-    lifecycle.head_ref,
-    lifecycle.base_ref,
-    lifecycle.opened_by,
+    openings.pr_id,
+    openings.repo_name,
+    openings.pr_number,
+    openings.head_ref,
+    openings.base_ref,
+    openings.actor_login as opened_by,
     detection.agent,
     detection.matched_by,
     detection.is_agent,
-    lifecycle.is_fork,
-    lifecycle.opened_at,
-    lifecycle.merged_at,
-    lifecycle.closed_at,
-    case
-        when lifecycle.merged_at is not null then 'merged'
-        when lifecycle.closed_at is not null then 'closed'
-        else 'open'
-    end as status,
-    date_diff('minute', lifecycle.opened_at, lifecycle.merged_at) / 60.0 as hours_to_merge,
-    lifecycle.reopen_count,
-    lifecycle.review_count,
-    lifecycle.approval_count
-from lifecycle
-inner join detection on lifecycle.pr_id = detection.pr_id
-where lifecycle.opened_at is not null
+    openings.head_repo_id is distinct from openings.base_repo_id as is_fork,
+    openings.created_at as opened_at
+from openings
+inner join detection on openings.pr_id = detection.pr_id

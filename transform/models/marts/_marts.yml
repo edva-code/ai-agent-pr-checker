@@ -13,16 +13,9 @@ models:
               arguments:
                 to: ref('agent_names')
                 field: agent
-      - name: status
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: [merged, closed, open]
   - name: agg_daily_metrics
-    description: PRs opened, merged and merge rate per agent per day.
+    description: PRs opened and share of the day per agent per day.
     columns:
-      - name: merge_rate
-        data_tests: [not_null]
       - name: capture_quality
         data_tests:
           - accepted_values:
@@ -51,8 +44,6 @@ models:
       - name: volume_low
         data_tests: [not_null]
       - name: pr_share_low
-        data_tests: [not_null]
-      - name: no_merges
         data_tests: [not_null]
   - name: capture_monthly_volume
     description: Average events per captured hour per source and month, against the previous unflagged months.

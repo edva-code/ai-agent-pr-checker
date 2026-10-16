@@ -1,11 +1,6 @@
 version: 2
 
 models:
-  - name: int_pr_lifecycle
-    description: One row per PR with opened, merged and closed timestamps.
-    columns:
-      - name: pr_id
-        data_tests: [unique, not_null]
   - name: int_agent_detection
     description: Which agent (or 'human') opened each PR, and which rule matched.
     columns:

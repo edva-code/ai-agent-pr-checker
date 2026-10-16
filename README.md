@@ -1,6 +1,6 @@
 # AI Agent PR Tracker
 
-How much of open source is now written by AI coding agents — and does their work get merged?
+How much of open source is now written by AI coding agents? (Whether their work gets merged is planned, not built yet.)
 
 This pipeline processes every public pull request on GitHub (via [GH Archive](https://www.gharchive.org/))
 and detects PRs opened by AI coding agents such as Claude, Codex, Cursor, Copilot, Jules and Devin.
@@ -57,11 +57,10 @@ GROUP BY 1 ORDER BY 2 DESC LIMIT 15;
 
 ```
 source: data/events/*/*.parquet
-  └─ stg_pr_events          view   typed + deduplicated events (GH Archive can repeat an event)
-       └─ int_pr_lifecycle  view   one row per PR: opened / merged / closed, reviews, approvals
-            └─ int_agent_detection  view   PR → agent, using rules from seeds/agent_rules.csv
-                 └─ fct_prs           table  one row per PR opened inside the loaded window
-                      └─ agg_daily_metrics  table  per day × agent: PRs, merge rate, median time to merge, share
+  └─ stg_pr_events          incremental  one row per PR: its earliest opening event
+       └─ int_agent_detection  table  PR → agent, using rules from seeds/agent_rules.csv
+            └─ fct_prs           table  one row per PR opened inside the loaded window
+                 └─ agg_daily_metrics  table  per day × agent: PRs opened, share of the day
 ```
 
 Detection rules live in a seed (`transform/seeds/agent_rules.csv`), so adding a new agent is a
@@ -71,8 +70,8 @@ one-line CSV change, not a code change. Bot accounts take priority over branch p
 uv run dbt build --project-dir transform --profiles-dir transform   # run from repo root
 ```
 
-`dbt build` runs seeds, models and 29 tests (uniqueness, not-null, accepted values,
-relationships, plus custom tests such as "no PR merged before it was opened").
+`dbt build` runs seeds, models and tests (uniqueness, not-null, accepted values,
+relationships, plus custom tests such as "share of the day between 0 and 1").
 The warehouse is `data/warehouse.duckdb`; all timestamps are bucketed in UTC.
 
 ### Dashboard
@@ -103,8 +102,6 @@ Over the three months: 1,541 hours ok, 413 high, 302 low, 0 missing; 78 days ok,
 
 ### Data caveats
 
-- **Right-censoring:** recent PRs have had less time to be merged, so merge rates for the last
-  days are understated. PRs opened before the loaded window are excluded.
 - **GH Archive volume change (2026-10-06 ≈17:00 UTC):** from this hour the archive stops
   containing push/create/delete events (~85k → ~7k events/hour), and the number of captured
   PR events roughly doubles. Absolute PR counts before and after are not comparable;
@@ -115,7 +112,8 @@ Over the three months: 1,541 hours ok, 413 high, 302 low, 0 missing; 78 days ok,
 ## Roadmap
 
 - [x] Hourly ingestion to partitioned Parquet (idempotent, atomic writes, retries)
-- [x] dbt models: staging, agent detection, PR lifecycle (opened → merged/closed)
+- [x] dbt models: staging (opened PRs), agent detection, daily metrics
+- [ ] Merged/closed PRs (Parquet already keeps all PR events)
 - [x] Data quality tests and freshness checks
 - [ ] Dagster schedule and backfills
 - [x] Streamlit dashboard

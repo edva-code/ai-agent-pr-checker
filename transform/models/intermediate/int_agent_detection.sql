@@ -2,7 +2,7 @@
 -- must match the whole string, which silently matched nothing in our first query.
 -- Bot accounts (priority 1) win over branch prefixes (priority 2).
 with prs as (
-    select pr_id, head_ref, opened_by from {{ ref('int_pr_lifecycle') }}
+    select pr_id, head_ref, actor_login as opened_by from {{ ref('stg_pr_events') }}
 ),
 
 rules as (
