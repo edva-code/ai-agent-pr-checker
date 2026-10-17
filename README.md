@@ -80,7 +80,11 @@ The warehouse is `data/warehouse.duckdb`; all timestamps are bucketed in UTC.
 uv run streamlit run src/tracker/dashboard.py   # not while dbt build runs (DuckDB lock)
 ```
 
-AI vs human PR totals and the daily AI share, with capture-warning days marked.
+Sidebar filters: date range, AI agents, day/week/month. Tabs:
+
+- **Overview**: totals and the AI share trend (selected agents / all PRs); capture-warning days marked in the Day view.
+- **Agents**: PRs per agent over time, a leaderboard with change vs the previous same-length period, and when each agent first appeared (all data).
+- **Year over year**: monthly AI share, one line per year.
 
 ### Data quality
 
