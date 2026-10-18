@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pyarrow.parquet as pq
 import pytest
+import urllib3
 
 from tracker import ingest
 
@@ -159,3 +160,58 @@ def test_missing_hour_raises_file_not_found(tmp_path):
         ingest.ingest_hour(
             HOUR, tmp_path, session=FakeSession(b"", status=404), stats_dir=tmp_path / "stats"
         )
+
+
+class DroppingRaw(io.BytesIO):
+    # Like a connection reset by the server after the body was partly read
+    def read(self, size=-1):
+        data = super().read(size)
+        if not data:
+            raise urllib3.exceptions.ProtocolError("Connection reset by peer")
+        return data
+
+
+class FlakySession(FakeSession):
+    def __init__(self, body: bytes, drops: int):
+        super().__init__(body)
+        self.drops = drops
+
+    def get(self, url, **kwargs):
+        resp = super().get(url, **kwargs)
+        if self.calls <= self.drops:
+            resp.raw = DroppingRaw(self.body)
+        return resp
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(ingest.time, "sleep", lambda seconds: None)
+
+
+def test_dropped_hour_is_retried_from_scratch(tmp_path, no_sleep):
+    session = FlakySession(gzip.compress(b"".join(raw_lines(pr_event("1"), pr_event("2")))), 1)
+
+    stats = ingest.ingest_hour(HOUR, tmp_path, session=session, stats_dir=tmp_path / "stats")
+
+    assert session.calls == 2
+    assert (stats.lines, stats.kept) == (2, 2)  # not doubled by the failed attempt
+    assert pq.read_table(tmp_path / "date=2026-10-06" / "14.parquet").num_rows == 2
+
+
+def test_hour_fails_after_three_drops(tmp_path, no_sleep):
+    session = FlakySession(gzip.compress(b"".join(raw_lines(pr_event("1")))), 3)
+
+    with pytest.raises(urllib3.exceptions.ProtocolError):
+        ingest.ingest_hour(HOUR, tmp_path, session=session, stats_dir=tmp_path / "stats")
+
+    assert session.calls == 3
+    assert not (tmp_path / "date=2026-10-06" / "14.parquet").exists()
+
+
+def test_missing_hour_is_not_retried(tmp_path, no_sleep):
+    session = FakeSession(b"", status=404)
+
+    with pytest.raises(FileNotFoundError):
+        ingest.ingest_hour(HOUR, tmp_path, session=session, stats_dir=tmp_path / "stats")
+
+    assert session.calls == 1

@@ -30,6 +30,7 @@ from typing import IO, Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 import requests
+import urllib3
 
 log = logging.getLogger("tracker.ingest")
 
@@ -42,6 +43,9 @@ OPENDIGGER_START = datetime(2026, 9, 6, tzinfo=UTC)
 KEEP_TYPES = frozenset({"PullRequestEvent", "PullRequestReviewEvent"})
 DEFAULT_OUT_DIR = Path("data/events")
 DEFAULT_STATS_DIR = Path("data/ingest_stats")
+RETRIES = 3
+# Mid-read drops come from urllib3 (resp.raw), not requests; truncated gzip raises EOFError
+NETWORK_ERRORS = (requests.RequestException, urllib3.exceptions.HTTPError, OSError, EOFError)
 
 SCHEMA = pa.schema(
     [
@@ -177,23 +181,14 @@ def write_stats(stats: HourStats, stats_dir: Path = DEFAULT_STATS_DIR) -> None:
     write_parquet([row], output_path(stats.hour, stats_dir), STATS_SCHEMA)
 
 
-def open_hour(hour: datetime, session: requests.Session, retries: int = 3) -> IO[bytes]:
+def open_hour(hour: datetime, session: requests.Session) -> IO[bytes]:
     url = hour_url(hour)
-    for attempt in range(1, retries + 1):
-        try:
-            resp = session.get(url, stream=True, timeout=60)
-            if resp.status_code == 404:
-                raise FileNotFoundError(f"{url} not published yet")
-            resp.raise_for_status()
-            resp.raw.decode_content = False  # we gunzip ourselves
-            return gzip.GzipFile(fileobj=resp.raw)
-        except requests.RequestException as exc:
-            if attempt == retries:
-                raise
-            wait = 2**attempt
-            log.warning("attempt %d for %s failed (%s), retrying in %ds", attempt, url, exc, wait)
-            time.sleep(wait)
-    raise AssertionError("unreachable")
+    resp = session.get(url, stream=True, timeout=60)
+    if resp.status_code == 404:
+        raise FileNotFoundError(f"{url} not published yet")
+    resp.raise_for_status()
+    resp.raw.decode_content = False  # we gunzip ourselves
+    return gzip.GzipFile(fileobj=resp.raw)
 
 
 def ingest_hour(
@@ -215,8 +210,23 @@ def ingest_hour(
         stats_path.unlink(missing_ok=True)
 
     session = session or requests.Session()
-    with open_hour(hour, session) as stream:
-        rows = list(filter_events(stream, hour, stats))
+    # A drop can happen while opening or mid-read, so each attempt restarts the whole hour
+    for attempt in range(1, RETRIES + 1):
+        stats = HourStats(hour=hour)  # fresh counts, or a retried hour would double them
+        try:
+            with open_hour(hour, session) as stream:
+                rows = list(filter_events(stream, hour, stats))
+            break
+        except FileNotFoundError:
+            raise  # 404: the hour does not exist, retrying will not help
+        except NETWORK_ERRORS as exc:
+            if attempt == RETRIES:
+                raise
+            wait = 2**attempt
+            log.warning(
+                "attempt %d for %s failed (%s), retrying in %ds", attempt, hour_url(hour), exc, wait
+            )
+            time.sleep(wait)
     write_parquet(rows, path)
     write_stats(stats, stats_dir)
     return stats
