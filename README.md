@@ -5,9 +5,36 @@ How much of open source is now written by AI coding agents? (Whether their work 
 This pipeline processes every public pull request on GitHub (via [GH Archive](https://www.gharchive.org/))
 and detects PRs opened by AI coding agents such as Claude, Codex, Cursor, Copilot, Jules and Devin.
 
-> **Three months (2026-07-05 → 10-06, 2.26M new PRs):** 13.1% were opened by detected AI agents —
-> Claude 6.0%, Codex 4.5%, Cursor 1.9%, Copilot 0.3%, Devin 0.2%, ChatGPT 0.1%.
-> The weekly share stays between 11% and 15%.
+## Results
+
+<!-- stats:start -->
+**Jan 2022 – Sep 2026:** 275,581,121 PRs opened, 6,368,473 (**2.3%**) by detected AI agents.
+
+| Agent | PRs opened | Share of all PRs |
+|---|---:|---:|
+| codex | 2,898,076 | 1.05% |
+| claude | 2,040,434 | 0.74% |
+| copilot | 721,148 | 0.26% |
+| cursor | 555,108 | 0.20% |
+| devin | 122,496 | 0.04% |
+| chatgpt | 21,318 | 0.01% |
+| jules | 9,893 | 0.00% |
+<!-- stats:end -->
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/ai_share-dark.svg">
+  <img alt="AI share of PRs opened per month" src="docs/img/ai_share-light.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/per_agent-dark.svg">
+  <img alt="Share of all PRs opened per AI agent per month" src="docs/img/per_agent-light.svg">
+</picture>
+
+**[View interactive charts →](https://edva-code.github.io/ai-agent-pr-checker/)** (hover for values,
+drag on the share chart to zoom the agent charts)
+
+Detected agents only, so a lower bound; capture varies by month (see [Data caveats](#data-caveats)).
+Regenerate after a dbt build: `uv run python -m tracker.report`.
 
 ## Architecture
 

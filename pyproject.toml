@@ -19,6 +19,7 @@ dev = [
     "duckdb>=1.1",
     "pytest>=8",
     "ruff>=0.6",
+    "vl-convert-python>=1.9.0.post1",
 ]
 
 [build-system]
